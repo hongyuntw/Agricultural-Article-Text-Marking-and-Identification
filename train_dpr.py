@@ -26,7 +26,7 @@ epochs = 10
 warm_up_rate = 0.03
 json_path = './data/train_complete.json'
 train_negative_nums = 4
-multi_gpu = True
+multi_gpu = False
 model_save_path = './outputs_models/dpr/'
 if not os.path.exists(model_save_path):
     os.makedirs(model_save_path)
@@ -63,11 +63,7 @@ if multi_gpu:
 model.train()
 
 
-
-
-positive_idx_per_question = torch.tensor(range(0, batch_size * 2, 2)).to(device)
-
-
+labels = range(0, 20, 2)
 
 for epoch in range(epochs):
     running_loss = 0.0
@@ -77,19 +73,20 @@ for epoch in range(epochs):
         # test_input_ids, test_attention_mask, test_token_type_ids, ref_input_ids, ref_attention_mask, ref_token_type_ids = [t.to(device) for t in data]
         test_input_ids, test_attention_mask, ref_input_ids, ref_attention_mask = [t.to(device) for t in data]
 
-        b = test_input_ids.size(0)
+        
 
         ref_input_ids = ref_input_ids.view(ref_input_ids.size(0) * ref_input_ids.size(1), ref_input_ids.size(-1))
         ref_attention_mask = ref_attention_mask.view(ref_attention_mask.size(0) * ref_attention_mask.size(1), ref_attention_mask.size(-1))
         # ref_token_type_ids = ref_token_type_ids.view(ref_token_type_ids.size(0) * ref_token_type_ids.size(1), ref_token_type_ids.size(-1))
-
         
-
+        
         # forward pass
         D_test = (test_input_ids, test_attention_mask)
         D_ref = (ref_input_ids, ref_attention_mask)
 
         scores = model(D_test, D_ref)
+        b = scores.size(0)
+        positive_idx_per_question = torch.tensor(labels[:b]).to(device)
 
         loss, correct_predictions_count = cal_nll_loss(scores, positive_idx_per_question)
 
@@ -100,7 +97,7 @@ for epoch in range(epochs):
 
         loss.backward()
 
-        if (i+1) % accumulation_steps == 0:
+        if ((i+1) % accumulation_steps) or ((i+1) == len(train_loader)) == 0:
             optimizer.step()
             optimizer.zero_grad()
             scheduler.step()

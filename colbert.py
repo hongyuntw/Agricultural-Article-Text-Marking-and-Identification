@@ -45,7 +45,7 @@ class ColBERT(BertPreTrainedModel):
         )
 
 
-    def doc(self, input_ids, attention_mask, token_type_ids, keep_dims=True):
+    def doc(self, input_ids, attention_mask, keep_dims=True):
         D = self.bert(input_ids, attention_mask=attention_mask)[0]
         # Bsize * Length * Dim=128 
         D = self.linear(D)

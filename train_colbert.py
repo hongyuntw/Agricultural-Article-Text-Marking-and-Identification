@@ -17,14 +17,14 @@ import os
 pretrained_model = 'hfl/chinese-macbert-base'  
 lr = 1e-5
 batch_size = 1
-accumulation_steps = 8
+accumulation_steps = 16
 mode = 'train'
 epochs = 5
 warm_up_rate = 0.03
 json_path = './data/train_complete.json'
-train_negative_nums = 4
+train_negative_nums = 150
 multi_gpu = False
-model_save_path = './outputs_models/colbert/'
+model_save_path = './outputs_models/colbert_negall/'
 if not os.path.exists(model_save_path):
     os.makedirs(model_save_path)
 ### hyperparams ###
@@ -39,8 +39,8 @@ if device == 'cpu':
 json_data = load_data_json(json_path)
 
 tokenizer = AutoTokenizer.from_pretrained(pretrained_model)
-# train_set = MyDataset(mode, json_data, tokenizer, train_negative_nums)
 train_set = MyDataset_triples(mode, json_data, tokenizer, train_negative_nums)
+print(len(train_set))
 train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
 
 
@@ -95,7 +95,7 @@ for epoch in range(epochs):
 
         loss.backward()
 
-        if (i+1) % accumulation_steps == 0:
+        if ((i+1) % accumulation_steps) or ((i+1) == len(train_loader)) == 0:
             optimizer.step()
             optimizer.zero_grad()
             scheduler.step()

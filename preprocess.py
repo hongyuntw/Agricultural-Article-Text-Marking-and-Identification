@@ -12,7 +12,6 @@ import argparse
 import pickle
 import ast
 
-
 ### todo
 # same word dict 不能重複 會被改道 青青蔥 done
 # ckiptagger force done
@@ -49,8 +48,8 @@ def create_same_words_dict():
                 
     
 
-def create_train_json(json_path):
-    files = glob.glob("./data/dataTrainComplete/*.txt")
+def create_train_json(json_path, folder_path):
+    files = glob.glob(f"{folder_path}*.txt")
 
     print(len(files))
 
@@ -101,12 +100,13 @@ def create_positive_dict():
 
 
 # use bm25 to get top-5 hard-negative document for each did
-def create_hard_negatives_data(same_words_dict, positive_dict, json_path):
+def create_hard_negatives_data(same_words_dict, positive_dict, json_path, bm25_topk=150):
     json_data = load_data_json(json_path)
 
     corpus_ids = [d['did'] for d in json_data]
     corpus = []
     titles = []
+    title_and_corpus = []
 
     from zhon.hanzi import punctuation
     import string
@@ -120,20 +120,25 @@ def create_hard_negatives_data(same_words_dict, positive_dict, json_path):
 
         corpus.append(filter_text_words)
         titles.append(filter_title_words)
+        title_and_corpus.append(filter_title_words + filter_text_words)
     
     from gensim.summarization import bm25
     print('start build bm25 model...')
 
-    bm25Model = bm25.BM25(corpus)
+    print(len(title_and_corpus))
+    # bm25Model = bm25.BM25(corpus)
+    bm25Model = bm25.BM25(title_and_corpus)
 
-    for i, q_title in enumerate(tqdm(titles)):
+    for i, query in enumerate(tqdm(titles)):
         q_did = corpus_ids[i]
 
         if q_did not in positive_dict:
             positive_dict[q_did] = []
 
-        scores = bm25Model.get_scores(q_title)
-        best_docs = sorted(range(len(scores)), key=lambda i: scores[i])[-20:]
+ 
+
+        scores = bm25Model.get_scores(query)
+        best_docs = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:bm25_topk]
         hard_negative_dids = []
 
         bm25_pos_dids = [corpus_ids[idx] for idx in best_docs]
@@ -144,6 +149,7 @@ def create_hard_negatives_data(same_words_dict, positive_dict, json_path):
 
         json_data[i]['pos_dids'] = pos_dids
         json_data[i]['hard_neg_dids'] = hard_negative_dids
+        json_data[i]['bm25_pos_dids'] = [did for did in bm25_pos_dids if did != q_did]
 
     json_data = sorted(json_data, key=lambda d: int(d['did'])) 
 
@@ -151,7 +157,7 @@ def create_hard_negatives_data(same_words_dict, positive_dict, json_path):
 	    json.dump(json_data, f, ensure_ascii=False)
 
 
-def tokenize(same_words_dict, json_data):
+def tokenize(same_words_dict, json_data, documents_sentence_list_path, titles_sentence_list_path):
 
 
     # documents = [d['title'] + ' ' + d['text'] for d in json_data]
@@ -184,10 +190,10 @@ def tokenize(same_words_dict, json_data):
     coerce_dictionary = dictionary, # words in this dictionary are forced
     )
 
-    with open('./data/documents_sentence_list', 'wb') as handle:
+    with open(documents_sentence_list_path, 'wb') as handle:
         pickle.dump(documents_sentence_list, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    with open('./data/titles_sentence_list', 'wb') as handle:
+    with open(titles_sentence_list_path, 'wb') as handle:
         pickle.dump(titles_sentence_list, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     # with open('./data/train_word_sentence_list', 'wb') as handle:
@@ -251,45 +257,52 @@ def load_data_json(json_path):
 
 if __name__ == '__main__':
 
-    json_path = './data/train_complete.json'
+    mode = 'train'
+    folder_path = f'./data/dataTrainComplete/'
+    json_path = f'./data/{mode}_complete.json'
+
+    create_train_json(json_path, folder_path)
     json_data = load_data_json(json_path)
+    print(len(json_data))
 
-    # same_words_dict = create_same_words_dict()
-    # create_train_json(json_path)
-
-    
-    # tokenize(same_words_dict, json_data)
-
-    # documents_sentence_list_path = './data/documents_sentence_list'
-    # titles_sentence_list_path = './data/titles_sentence_list'
-    # add_tokenize_word_to_json(documents_sentence_list_path, titles_sentence_list_path, json_path, same_words_dict)
-
-
-    # # # bm25 create negative sample
-    # positive_dict = create_positive_dict()
-    # create_hard_negatives_data(same_words_dict, positive_dict, json_path)
-
+    same_words_dict = create_same_words_dict()
     
 
-    pos_count = 0
-    neg_count = 0
-    avg_text_length = 0
-    avg_title_length = 0
-    for d in json_data:
-        neg_dids = d['hard_neg_dids']
-        pos_dids = d['pos_dids']
-        pos_count += len(pos_dids)
-        neg_count += len(neg_dids)
-        text = ''.join(d['replaced_text_sentence'].split())
-        title = ''.join(d['replaced_title_sentence'].split())
-        avg_text_length += len(text)
-        avg_title_length += len(title)
+    documents_sentence_list_path = f'./data/documents_sentence_list_{mode}'
+    titles_sentence_list_path = f'./data/titles_sentence_list_{mode}'
+    
+    # tokenize(same_words_dict, json_data, documents_sentence_list_path, titles_sentence_list_path)
 
 
-    print(pos_count / len(json_data))
-    print(neg_count / len(json_data))
-    print(avg_text_length / len(json_data))
-    print(avg_title_length / len(json_data))
+    add_tokenize_word_to_json(documents_sentence_list_path, titles_sentence_list_path, json_path, same_words_dict)
+
+
+    # # bm25 create negative sample
+    # positive_dict = {}
+    positive_dict = create_positive_dict()
+    create_hard_negatives_data(same_words_dict, positive_dict, json_path, 200)
+
+    
+
+    # pos_count = 0
+    # neg_count = 0
+    # avg_text_length = 0
+    # avg_title_length = 0
+    # for d in json_data:
+    #     neg_dids = d['hard_neg_dids']
+    #     pos_dids = d['pos_dids']
+    #     pos_count += len(pos_dids)
+    #     neg_count += len(neg_dids)
+    #     text = ''.join(d['replaced_text_sentence'].split())
+    #     title = ''.join(d['replaced_title_sentence'].split())
+    #     avg_text_length += len(text)
+    #     avg_title_length += len(title)
+
+
+    # print(pos_count / len(json_data))
+    # print(neg_count / len(json_data))
+    # print(avg_text_length / len(json_data))
+    # print(avg_title_length / len(json_data))
 
 
 

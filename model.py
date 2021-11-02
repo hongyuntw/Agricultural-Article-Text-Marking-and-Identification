@@ -50,14 +50,13 @@ class MyModel(BertPreTrainedModel):
         super(MyModel, self).__init__(config=AutoConfig.from_pretrained(PRETRAINED_LM))
         self.config = AutoConfig.from_pretrained(PRETRAINED_LM)
         self.bert = AutoModel.from_pretrained(PRETRAINED_LM, output_hidden_states=True)
-        # self.bert_ref = self.bert_test
-        # self.bert_ref = AutoModel.from_pretrained(PRETRAINED_LM, output_hidden_states=True)
-        # self.linear = nn.Sequential(
-        #     nn.Linear(self.config.hidden_size * 2, self.config.hidden_size),
-        #     nn.ReLU(),
-        #     nn.Dropout(0.1),
-        #     nn.Linear(self.config.hidden_size, 2)
-        # )
+        self.linear = nn.Sequential(
+            nn.Linear(self.config.hidden_size * 2, 2)
+            # nn.Linear(self.config.hidden_size * 2, self.config.hidden_size),
+            # nn.ReLU(),
+            # nn.Dropout(0.1),
+            # nn.Linear(self.config.hidden_size, 2)
+        )
         self.pooler = BertPooler(self.config)
         self.attention =  nn.MultiheadAttention(
             embed_dim=self.config.hidden_size,
@@ -79,37 +78,95 @@ class MyModel(BertPreTrainedModel):
         layer_output = self.output(intermediate_output, attention_output)
         return layer_output
 
+    
         
-    def forward(self, test_input_ids, test_attention_mask, test_token_type_ids, ref_input_ids, ref_attention_mask, ref_token_type_ids):
-
+    def forward(self, D_test, D_ref):
+        test_input_ids, test_attention_mask = D_test
+        ref_input_ids, ref_attention_mask = D_ref
+        
         test_outputs = self.bert(
             test_input_ids,
-            attention_mask=test_attention_mask,
-            token_type_ids=test_token_type_ids)
+            attention_mask=test_attention_mask)
 
         ref_outputs = self.bert(
             ref_input_ids,
-            attention_mask=ref_attention_mask,
-            token_type_ids=ref_token_type_ids)
+            attention_mask=ref_attention_mask)
 
-        test_hidden = test_outputs[0]
-        ref_hidden = ref_outputs[0]
+        ### cat last hidden layer with attention to predict
+        ###
+        ###
+        # test_hidden = test_outputs[0]
+        # ref_hidden = ref_outputs[0]
 
-        cat_hidden  = torch.cat((test_hidden, ref_hidden) , dim=1)
-        attn_output, attn_output_weights = self.attention(cat_hidden, cat_hidden, cat_hidden)
+        # cat_hidden  = torch.cat((test_hidden, ref_hidden) , dim=1)
+        # attn_output, attn_output_weights = self.attention(cat_hidden, cat_hidden, cat_hidden)
 
-        layer_output = self.feed_forward(attn_output)
+        # layer_output = self.feed_forward(attn_output)
 
-        pooled_output = self.pooler(layer_output)
-        pooled_output = self.dropout(pooled_output)
-        logits = self.classifier(pooled_output)
+        # pooled_output = self.pooler(layer_output)
+        # pooled_output = self.dropout(pooled_output)
+        # logits = self.classifier(pooled_output)
 
 
+        ### cat CLS to predict 
+        ###
+        ###
         # test_cls = test_outputs[1]
         # ref_cls = ref_outputs[1]
-
         # concat_cls = torch.cat((test_cls, ref_cls) , dim=-1)
-        # outputs = self.linear(concat_cls)
+        # logits = self.linear(concat_cls)
+
+        ### pooling use max token 
+        ###
+        ###
+        test_hidden = test_outputs[0]
+        ref_hidden = ref_outputs[0]
+        test_max, _ = torch.max(test_hidden, dim=1)
+        ref_max, _ = torch.max(ref_hidden, dim=1)
+        cat_max = torch.cat((test_max, ref_max) , dim=-1)
+        logits = self.linear(cat_max)
+
+
+        ### first layer + last layer and concat to attention
+        ###
+        ###
+        # test_first_layer_hidden = test_outputs[-1][1]
+        # test_last_layer_hidden = test_outputs[-1][-1]
+
+        # test_first_add_last = torch.add(test_first_layer_hidden, test_last_layer_hidden)
+
+        # ref_first_layer_hidden = ref_outputs[-1][1]
+        # ref_last_layer_hidden = ref_outputs[-1][-1]
+
+        # ref_first_add_last = torch.add(ref_first_layer_hidden, ref_last_layer_hidden)
+
+        # cat_hidden  = torch.cat((test_first_add_last, ref_first_add_last) , dim=1)
+        # attn_output, attn_output_weights = self.attention(cat_hidden, cat_hidden, cat_hidden)
+
+        # layer_output = self.feed_forward(attn_output)
+
+        # pooled_output = self.pooler(layer_output)
+        # pooled_output = self.dropout(pooled_output)
+        # logits = self.classifier(pooled_output)
+
+
+        ### first layer + last layer and get max to linear
+        ###
+        ###
+        # test_first_layer_hidden = test_outputs[-1][1]
+        # test_last_layer_hidden = test_outputs[-1][-1]
+
+        # test_first_add_last = torch.add(test_first_layer_hidden, test_last_layer_hidden)
+
+        # ref_first_layer_hidden = ref_outputs[-1][1]
+        # ref_last_layer_hidden = ref_outputs[-1][-1]
+
+        # ref_first_add_last = torch.add(ref_first_layer_hidden, ref_last_layer_hidden)
+
+        # test_max, _ = torch.max(test_first_add_last, dim=1)
+        # ref_max, _ = torch.max(ref_first_add_last, dim=1)
+        # cat_max = torch.cat((test_max, ref_max) , dim=-1)
+        # logits = self.linear(cat_max)
 
         return logits
 
