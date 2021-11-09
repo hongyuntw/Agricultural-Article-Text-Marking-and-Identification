@@ -26,6 +26,12 @@ import ast
 # TFIDF
 
 
+other_keywords = [
+    '葡萄露菌病',
+    '白葉枯病'
+    '舞蛾',
+]
+
 
 def create_same_words_dict():
     import pandas as pd
@@ -37,6 +43,7 @@ def create_same_words_dict():
         df_list = df.values.tolist()
         for words in df_list:
             change_to = words[0]
+            same_words_dict[change_to] = change_to
             for word in words:
                 word = str(word)
                 if word == 'nan':
@@ -44,6 +51,9 @@ def create_same_words_dict():
                 if word != change_to:
                     same_words_dict[word] = change_to
     
+    for other_keyword in other_keywords:
+        same_words_dict[other_keyword] = other_keyword
+
     return same_words_dict
                 
     
@@ -74,27 +84,33 @@ def create_train_json(json_path, folder_path):
 
 
 def create_positive_dict():
-    try:
-        with open('./data/train_positive_dict', 'rb') as handle:
-            positive_dict = pickle.load(handle)
-        return positive_dict
-    except:
-        positive_dict = {}
-        import csv
-        f = open('./data/TrainLabel.csv', 'r')
-        rows = csv.reader(f, delimiter=',')
-        for row in rows:
-            test_id , ref_id = row
-            if test_id == 'Test':
-                continue
-            if test_id in positive_dict:
-                positive_dict[test_id].append(ref_id)
-            else:
-                positive_dict[test_id] = [ref_id]
-        f.close()
-        with open('./data/train_positive_dict', 'wb') as handle:
-            pickle.dump(positive_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        return positive_dict
+    # try:
+    #     with open('./data/train_positive_dict', 'rb') as handle:
+    #         positive_dict = pickle.load(handle)
+    #     return positive_dict
+    # except:
+    positive_dict = {}
+    import csv
+    f = open('./data/TrainLabel.csv', 'r')
+    rows = csv.reader(f, delimiter=',')
+    for row in rows:
+        test_id , ref_id = row
+        if test_id == 'Test':
+            continue
+        if test_id in positive_dict:
+            positive_dict[test_id].append(ref_id)
+        else:
+            positive_dict[test_id] = [ref_id]
+
+        if ref_id in positive_dict:
+            positive_dict[ref_id].append(test_id)
+        else:
+            positive_dict[ref_id] = [test_id]
+        
+    f.close()
+    with open('./data/train_positive_dict', 'wb') as handle:
+        pickle.dump(positive_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    return positive_dict
     
 
 
@@ -129,7 +145,7 @@ def create_hard_negatives_data(same_words_dict, positive_dict, json_path, bm25_t
     # bm25Model = bm25.BM25(corpus)
     bm25Model = bm25.BM25(title_and_corpus)
 
-    for i, query in enumerate(tqdm(titles)):
+    for i, query in enumerate(tqdm(title_and_corpus)):
         q_did = corpus_ids[i]
 
         if q_did not in positive_dict:
@@ -147,7 +163,7 @@ def create_hard_negatives_data(same_words_dict, positive_dict, json_path, bm25_t
         hard_negative_dids = [did for did in bm25_pos_dids if did not in pos_dids_set and did != q_did]
 
 
-        json_data[i]['pos_dids'] = pos_dids
+        json_data[i]['pos_dids'] = list(set(pos_dids))
         json_data[i]['hard_neg_dids'] = hard_negative_dids
         json_data[i]['bm25_pos_dids'] = [did for did in bm25_pos_dids if did != q_did]
 
@@ -258,8 +274,8 @@ def load_data_json(json_path):
 if __name__ == '__main__':
 
     mode = 'train'
-    folder_path = f'./data/dataTrainComplete/'
-    json_path = f'./data/{mode}_complete.json'
+    folder_path = f'./data/data{mode.title()}Complete/'
+    json_path = f'./data/{mode}_complete_ref_test_equal.json'
 
     create_train_json(json_path, folder_path)
     json_data = load_data_json(json_path)
@@ -271,7 +287,7 @@ if __name__ == '__main__':
     documents_sentence_list_path = f'./data/documents_sentence_list_{mode}'
     titles_sentence_list_path = f'./data/titles_sentence_list_{mode}'
     
-    # tokenize(same_words_dict, json_data, documents_sentence_list_path, titles_sentence_list_path)
+    tokenize(same_words_dict, json_data, documents_sentence_list_path, titles_sentence_list_path)
 
 
     add_tokenize_word_to_json(documents_sentence_list_path, titles_sentence_list_path, json_path, same_words_dict)

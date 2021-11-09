@@ -51,12 +51,13 @@ class MyModel(BertPreTrainedModel):
         self.config = AutoConfig.from_pretrained(PRETRAINED_LM)
         self.bert = AutoModel.from_pretrained(PRETRAINED_LM, output_hidden_states=True)
         self.linear = nn.Sequential(
-            nn.Linear(self.config.hidden_size * 2, 2)
+            nn.Linear(self.config.hidden_size * 3, 2)
             # nn.Linear(self.config.hidden_size * 2, self.config.hidden_size),
             # nn.ReLU(),
             # nn.Dropout(0.1),
             # nn.Linear(self.config.hidden_size, 2)
         )
+        
         self.pooler = BertPooler(self.config)
         self.attention =  nn.MultiheadAttention(
             embed_dim=self.config.hidden_size,
@@ -97,12 +98,9 @@ class MyModel(BertPreTrainedModel):
         ###
         # test_hidden = test_outputs[0]
         # ref_hidden = ref_outputs[0]
-
         # cat_hidden  = torch.cat((test_hidden, ref_hidden) , dim=1)
         # attn_output, attn_output_weights = self.attention(cat_hidden, cat_hidden, cat_hidden)
-
         # layer_output = self.feed_forward(attn_output)
-
         # pooled_output = self.pooler(layer_output)
         # pooled_output = self.dropout(pooled_output)
         # logits = self.classifier(pooled_output)
@@ -119,12 +117,30 @@ class MyModel(BertPreTrainedModel):
         ### pooling use max token 
         ###
         ###
+        # test_hidden = test_outputs[0]
+        # ref_hidden = ref_outputs[0]
+        # test_max, _ = torch.max(test_hidden, dim=1)
+        # ref_max, _ = torch.max(ref_hidden, dim=1)
+        # cat_max = torch.cat((test_max, ref_max) , dim=-1)
+        # logits = self.linear(cat_max)
+
+
+        ### pooling use mean token
+        ###
+        ###
         test_hidden = test_outputs[0]
+        test_input_mask_expanded = test_attention_mask.unsqueeze(-1).expand(test_hidden.size()).float()
+        test_mean = torch.sum(test_hidden * test_input_mask_expanded, 1) / torch.clamp(test_input_mask_expanded.sum(1), min=1e-9)
+
         ref_hidden = ref_outputs[0]
-        test_max, _ = torch.max(test_hidden, dim=1)
-        ref_max, _ = torch.max(ref_hidden, dim=1)
-        cat_max = torch.cat((test_max, ref_max) , dim=-1)
-        logits = self.linear(cat_max)
+        ref_input_mask_expanded = ref_attention_mask.unsqueeze(-1).expand(ref_hidden.size()).float()
+        ref_mean = torch.sum(ref_hidden * ref_input_mask_expanded, 1) / torch.clamp(ref_input_mask_expanded.sum(1), min=1e-9)
+        # cat_mean = torch.cat((test_mean, ref_mean)) , dim=-1)
+
+        cat_mean = torch.cat((test_mean, ref_mean, torch.abs(torch.sub(test_mean, ref_mean))) , dim=-1)
+        logits = self.linear(cat_mean)
+
+
 
 
         ### first layer + last layer and concat to attention
@@ -132,19 +148,13 @@ class MyModel(BertPreTrainedModel):
         ###
         # test_first_layer_hidden = test_outputs[-1][1]
         # test_last_layer_hidden = test_outputs[-1][-1]
-
         # test_first_add_last = torch.add(test_first_layer_hidden, test_last_layer_hidden)
-
         # ref_first_layer_hidden = ref_outputs[-1][1]
         # ref_last_layer_hidden = ref_outputs[-1][-1]
-
         # ref_first_add_last = torch.add(ref_first_layer_hidden, ref_last_layer_hidden)
-
         # cat_hidden  = torch.cat((test_first_add_last, ref_first_add_last) , dim=1)
         # attn_output, attn_output_weights = self.attention(cat_hidden, cat_hidden, cat_hidden)
-
         # layer_output = self.feed_forward(attn_output)
-
         # pooled_output = self.pooler(layer_output)
         # pooled_output = self.dropout(pooled_output)
         # logits = self.classifier(pooled_output)
@@ -155,14 +165,10 @@ class MyModel(BertPreTrainedModel):
         ###
         # test_first_layer_hidden = test_outputs[-1][1]
         # test_last_layer_hidden = test_outputs[-1][-1]
-
         # test_first_add_last = torch.add(test_first_layer_hidden, test_last_layer_hidden)
-
         # ref_first_layer_hidden = ref_outputs[-1][1]
         # ref_last_layer_hidden = ref_outputs[-1][-1]
-
         # ref_first_add_last = torch.add(ref_first_layer_hidden, ref_last_layer_hidden)
-
         # test_max, _ = torch.max(test_first_add_last, dim=1)
         # ref_max, _ = torch.max(ref_first_add_last, dim=1)
         # cat_max = torch.cat((test_max, ref_max) , dim=-1)

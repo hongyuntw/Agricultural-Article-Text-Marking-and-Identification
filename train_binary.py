@@ -21,20 +21,20 @@ lr = 1e-5
 batch_size = 4
 accumulation_steps = 1
 mode = 'train'
-epochs = 5
+epochs = 3
 warm_up_rate = 0.03
 json_path = './data/train_complete.json'
 train_pairs_path = './data/train_binary_pairs'
 train_negative_nums = 10
-multi_gpu = True
-warm_up = False
-model_save_path = './outputs_models/train_pairs_binray_max_linear_from_colbert_weights_nofreeze/'
+multi_gpu = False
+warm_up = True
+model_save_path = './outputs_models/binary/'
 if not os.path.exists(model_save_path):
     os.makedirs(model_save_path)
 ### hyperparams ###
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = 'cpu'
+# device = 'cpu'
 print("device:", device)
 if device == 'cpu':
     multi_gpu = False
@@ -55,7 +55,7 @@ print(f'warm_up_steps : {warm_up_steps}')
 
 
 colbert = ColBERT(pretrained_model, device=device)
-colbert_model_path = './outputs_models/colbert_neg30/model_2.pt'
+colbert_model_path = './outputs_models/colbert_neg150/model_2.pt'
 colbert.load_state_dict(torch.load(colbert_model_path), strict=False)
 
 
@@ -70,7 +70,7 @@ colbert_dict_params = dict(colbert_params)
 for name, param in colbert_dict_params.items():
     if 'bert' in name:
         model_dict_params[name].data.copy_(param.data)
-        # model_dict_params[name].requires_grad = False
+        model_dict_params[name].requires_grad = False
     
 model.load_state_dict(model_dict_params, strict=False)
 
@@ -79,7 +79,7 @@ if warm_up:
     scheduler = get_linear_schedule_with_warmup(optimizer, warm_up_steps, total_steps)
 
 
-class_weight = torch.FloatTensor([1/3767, 1/1383]).to(device)
+class_weight = torch.FloatTensor([1/10561, 1/1383]).to(device)
 loss_fct = nn.CrossEntropyLoss(weight=class_weight)
 # loss_fct = nn.CrossEntropyLoss()
 

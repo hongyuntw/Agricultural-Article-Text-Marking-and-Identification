@@ -13,6 +13,10 @@ class TestDataset(Dataset):
         self.did2text  = {}
         self.did2title = {}
         self.build_did2data(data)
+        self.test_marker_token_id = self.tok.convert_tokens_to_ids('[unused0]')
+        print(f'test_marker_token_id : {self.test_marker_token_id}')
+        self.ref_marker_token_id = self.tok.convert_tokens_to_ids('[unused1]')
+        print(f'ref_marker_token_id : {self.ref_marker_token_id}')
         # list of id
         self.ref_dids = ref_dids
 
@@ -40,14 +44,38 @@ class TestDataset(Dataset):
 
             return (input_ids, attention_mask, token_type_ids)
 
+    def tensorsize_colbert(self, text, marker):
+        # assert marker in ['test', ref]
+        text = '. ' + text
+
+        input_dict = self.tok(
+            text,
+            add_special_tokens=True,
+            max_length=512,
+            return_tensors='pt',
+            pad_to_max_length=True,
+            truncation='longest_first',
+        )
+
+        input_ids = input_dict['input_ids'][0]
+        token_type_ids = input_dict['token_type_ids'][0]
+        attention_mask = input_dict['attention_mask'][0]
+
+        if marker == 'test':
+            input_ids[1] = self.test_marker_token_id
+        elif marker == 'ref':
+            input_ids[1] = self.ref_marker_token_id
+
+        return (input_ids, attention_mask, token_type_ids)
+
     def __getitem__(self, idx):
         ref_did = self.ref_dids[idx]
 
         test_text = self.did2title[self.test_did] + self.did2text[self.test_did]
         ref_text = self.did2title[ref_did] + self.did2text[ref_did]
 
-        test_input_ids , test_attention_mask, test_token_type_ids = self.tensorsize(test_text)
-        ref_input_ids , ref_attention_mask, ref_token_type_ids = self.tensorsize(ref_text)
+        test_input_ids , test_attention_mask, test_token_type_ids = self.tensorsize_colbert(test_text, 'test')
+        ref_input_ids , ref_attention_mask, ref_token_type_ids = self.tensorsize_colbert(ref_text, 'ref')
 
         return test_input_ids, test_attention_mask, ref_input_ids, ref_attention_mask
 
@@ -66,11 +94,17 @@ class TestDataset(Dataset):
 
 # for train score model (ColBERT)
 class MyDataset_triples(Dataset):
-    def __init__(self, mode, data, tokenizer, negative_nums=2):
+    def __init__(self, mode, data, tokenizer, hard_negative_nums=2, rand_negative_nums=10):
         assert mode in ["train", 'val',  "test"]
         self.mode = mode
-        self.negative_nums = negative_nums
+        self.hard_negative_nums = hard_negative_nums
+        self.rand_negative_nums = rand_negative_nums
+
         self.tok = tokenizer
+        self.test_marker_token_id = self.tok.convert_tokens_to_ids('[unused0]')
+        print(f'test_marker_token_id : {self.test_marker_token_id}')
+        self.ref_marker_token_id = self.tok.convert_tokens_to_ids('[unused1]')
+        print(f'ref_marker_token_id : {self.ref_marker_token_id}')
 
         # (test_did, pos_ref_did, neg_ref_did)
         self.train_triples = []
@@ -96,6 +130,7 @@ class MyDataset_triples(Dataset):
 
 
     def build_train_triples(self,data):
+        import random
         for d in data:
             did = d['did']
             pos_dids = d['pos_dids']
@@ -104,29 +139,30 @@ class MyDataset_triples(Dataset):
                 continue
 
             # for pos_did in pos_dids:
-            #     for neg_did in neg_dids[:self.negative_nums]:
+            #     for neg_did in neg_dids[:self.hard_negative_nums]:
             #         self.train_triples.append((did, pos_did, neg_did))
 
+            #     random_negative_dids = random.sample(self.all_dids, 2 * self.rand_negative_nums)
+            #     c = 0
+            #     for neg_did in random_negative_dids:
+            #         if neg_did == did or neg_did in pos_dids:
+            #             continue
+            #         self.train_triples.append((did, pos_did, neg_did))
+            #         c += 1
+            #         if c >= self.rand_negative_nums:
+            #             break
+
+            
             pos_dids_set = set(pos_dids)
             for pos_did in pos_dids:
                 for neg_did in self.all_dids:
                     if neg_did in pos_dids_set or neg_did == did:
                         continue
                     self.train_triples.append((did, pos_did, neg_did))
-                    
 
-
-
-
-    def build_test_pairs(self, data):
-        pass
-        # all_dids = sorted(list(self.did2text.keys()))
-        # for test_did in all_dids:
-        #     for ref_did in all_dids:
-        #         if ref_did != test_did:
-        #             self.test_pairs.append((test_did, ref_did))
-
-    def tensorsize(self, text):
+    def tensorsize(self, text, marker):
+        # assert marker in ['test', ref]
+        text = '. ' + text
 
         input_dict = self.tok(
             text,
@@ -140,6 +176,11 @@ class MyDataset_triples(Dataset):
         input_ids = input_dict['input_ids'][0]
         token_type_ids = input_dict['token_type_ids'][0]
         attention_mask = input_dict['attention_mask'][0]
+
+        if marker == 'test':
+            input_ids[1] = self.test_marker_token_id
+        elif marker == 'ref':
+            input_ids[1] = self.ref_marker_token_id
 
         return (input_ids, attention_mask, token_type_ids)
 
@@ -157,23 +198,21 @@ class MyDataset_triples(Dataset):
     def __getitem__(self, idx):
         if self.mode == 'train':
             test_did , pos_ref_did, neg_ref_did = self.train_triples[idx]
-        # if self.mode == 'test':
-        #     test_did , ref_did = self.test_pairs[idx]
+
 
         test_text = self.did2title[test_did] + self.did2text[test_did]
         pos_ref_text = self.did2title[pos_ref_did] + self.did2text[pos_ref_did]
         neg_ref_text = self.did2title[neg_ref_did] + self.did2text[neg_ref_did]
 
-        test = self.tensorsize(test_text)
-        pos_ref = self.tensorsize(pos_ref_text)
-        neg_ref = self.tensorsize(neg_ref_text)
+        test = self.tensorsize(test_text, 'test')
+        pos_ref = self.tensorsize(pos_ref_text, 'ref')
+        neg_ref = self.tensorsize(neg_ref_text, 'ref')
 
         ref = self.combine_ref(pos_ref, neg_ref)
 
         test_input_ids , test_attention_mask, test_token_type_ids = test
         ref_input_ids , ref_attention_mask, ref_token_type_ids = ref
         if self.mode == 'train':
-            # return test_input_ids , test_attention_mask, test_token_type_ids, ref_input_ids , ref_attention_mask, ref_token_type_ids
             return test_input_ids , test_attention_mask, ref_input_ids , ref_attention_mask
 
             
@@ -256,21 +295,29 @@ class BinaryDataset(Dataset):
 
 
 
+
+
 # for train binary
 class MyDataset(Dataset):
-    def __init__(self, mode, data, tokenizer, negative_nums=2):
+    def __init__(self, mode, data, tokenizer, negative_nums=2, add_marker=True):
         assert mode in ["train", 'val',  "test"]
         self.mode = mode
         self.negative_nums = negative_nums
         self.tok = tokenizer
         # list of list , elemets be like (test_did, reference_did, label)
         self.train_pairs = []
+        self.add_marker = add_marker
         
         self.test_pairs = []
         self.did2text  = {}
         self.did2title = {}
         self.all_dids = set()
         self.build_did2data(data)
+
+        self.test_marker_token_id = self.tok.convert_tokens_to_ids('[unused0]')
+        print(f'test_marker_token_id : {self.test_marker_token_id}')
+        self.ref_marker_token_id = self.tok.convert_tokens_to_ids('[unused1]')
+        print(f'ref_marker_token_id : {self.ref_marker_token_id}')
 
         if mode == 'train':
             self.build_train_pairs(data)
@@ -319,6 +366,50 @@ class MyDataset(Dataset):
                 if ref_did != test_did:
                     self.test_pairs.append((str(test_did), str(ref_did)))
 
+    def tensorsize_cross_encoder(self, test_text, ref_text):
+
+        test_text = test_text[:250]
+        ref_text = ref_text[:250]
+
+        input_dict = self.tok(
+            test_text, ref_text,
+            add_special_tokens=True,
+            max_length=512,
+            return_tensors='pt',
+            pad_to_max_length=True,
+            truncation='longest_first',
+        )
+
+        input_ids = input_dict['input_ids'][0]
+        token_type_ids = input_dict['token_type_ids'][0]
+        attention_mask = input_dict['attention_mask'][0]
+
+        return (input_ids, attention_mask, token_type_ids)
+
+    def tensorsize_colbert(self, text, marker):
+        assert marker in ['test', 'ref']
+        text = '. ' + text
+
+        input_dict = self.tok(
+            text,
+            add_special_tokens=True,
+            max_length=512,
+            return_tensors='pt',
+            pad_to_max_length=True,
+            truncation='longest_first',
+        )
+
+        input_ids = input_dict['input_ids'][0]
+        token_type_ids = input_dict['token_type_ids'][0]
+        attention_mask = input_dict['attention_mask'][0]
+
+        if marker == 'test':
+            input_ids[1] = self.test_marker_token_id
+        elif marker == 'ref':
+            input_ids[1] = self.ref_marker_token_id
+
+        return (input_ids, attention_mask, token_type_ids)
+
     def tensorsize(self, text):
 
         input_dict = self.tok(
@@ -348,14 +439,155 @@ class MyDataset(Dataset):
         test_text = self.did2title[test_did] + self.did2text[test_did]
         ref_text = self.did2title[ref_did] + self.did2text[ref_did]
 
-        test_input_ids, test_attention_mask, test_token_type_ids = self.tensorsize(test_text)
+        if self.add_marker:
+            test_input_ids, test_attention_mask, test_token_type_ids = self.tensorsize_colbert(test_text, 'test')
+            ref_input_ids, ref_attention_mask, ref_token_type_ids = self.tensorsize_colbert(ref_text, 'ref')
+        else:
+            test_input_ids, test_attention_mask, test_token_type_ids = self.tensorsize(test_text)
+            ref_input_ids, ref_attention_mask, ref_token_type_ids = self.tensorsize(ref_text)
 
-        ref_input_ids, ref_attention_mask, ref_token_type_ids = self.tensorsize(ref_text)
+            
         
         if self.mode == 'train':
             return test_input_ids, test_attention_mask, ref_input_ids, ref_attention_mask, label
         if self.mode == 'test':
-            return test_input_ids, test_attention_mask, ref_input_ids, ref_attention_mask, test_did, ref_did 
+            return (test_input_ids, test_attention_mask, ref_input_ids, ref_attention_mask), (test_did, ref_did)
+
+
+    def __len__(self):
+        if self.mode == 'train':
+            return len(self.train_pairs)
+        if self.mode == 'test':
+            return len(self.test_pairs)
+
+
+
+# for cross encoder 
+class CrossEncoderDataset(Dataset):
+    def __init__(self, mode, data, tokenizer, hard_negative_nums=2, rand_negative_nums=2, train_pairs_path=None, test_pairs_path=None):
+        assert mode in ["train", 'val',  "test"]
+        self.mode = mode
+        self.hard_negative_nums = hard_negative_nums
+        self.rand_negative_nums = rand_negative_nums
+        self.tok = tokenizer
+        # list of list , elemets be like (test_did, reference_did, label)
+        self.train_pairs = []
+        
+        self.test_pairs = []
+        self.did2text  = {}
+        self.did2title = {}
+        self.all_dids = set()
+        self.build_did2data(data)
+
+        if train_pairs_path:
+            import pickle
+            with open(train_pairs_path, 'rb') as handle:
+                self.train_pairs =  pickle.load(handle)
+                print('using train pairs from pickle file!!')
+        else:
+            if mode == 'train':
+                self.build_train_pairs(data)
+
+        if mode == 'test':
+            self.build_test_pairs(data)
+
+    def build_did2data(self, data):
+        for d in data:
+            use_text = ''.join(d['replaced_text_sentence'].split())
+            use_title = ''.join(d['replaced_title_sentence'].split())
+            did = d['did']
+            self.did2text[did] = use_text
+            self.did2title[did] = use_title
+            self.all_dids.add(did)
+
+
+    def build_train_pairs(self, data):
+        pos_count = 0
+        neg_count = 0
+        for d in data:
+            did = d['did']
+            pos_dids = d['pos_dids']
+            neg_dids = d['hard_neg_dids']
+
+            pos_dids = set(pos_dids)
+
+            if len(pos_dids) == 0:
+                continue
+            for pos_did in pos_dids:
+                self.train_pairs.append((did, pos_did, 1))
+                pos_count += 1
+            
+            for neg_did in neg_dids[:self.hard_negative_nums]:
+                self.train_pairs.append((did, neg_did, 0))
+                neg_count += 1
+
+            random_negative_dids = random.sample(self.all_dids, 2 * self.rand_negative_nums)
+            c = 0
+            for neg_did in random_negative_dids:
+                if neg_did == did or neg_did in pos_dids:
+                    continue
+                self.train_pairs.append((did, neg_did, 0))
+                neg_count += 1
+                c += 1
+                if c >= self.rand_negative_nums:
+                    break
+            # for neg_did in self.all_dids:
+            #     if neg_did != did and neg_did not in pos_dids:
+            #         self.train_pairs.append((did, neg_did, 0))
+            #         neg_count += 1
+
+        print(f'training set postive rate == {pos_count/(pos_count + neg_count) :.3f}, pos={pos_count} neg={neg_count}')
+
+    def build_test_pairs(self, data):
+        all_dids = sorted([int(k) for k in self.did2text.keys()])
+        for test_did in all_dids:
+            for ref_did in all_dids:
+                if ref_did != test_did:
+                    self.test_pairs.append((str(test_did), str(ref_did)))
+
+
+
+    def tensorsize(self, test_text, ref_text):
+
+        test_text = test_text[:250]
+        ref_text = ref_text[:250]
+
+        input_dict = self.tok(
+            test_text, ref_text,
+            add_special_tokens=True,
+            max_length=512,
+            return_tensors='pt',
+            pad_to_max_length=True,
+            padding='max_length',
+            truncation='longest_first',
+        )
+
+        input_ids = input_dict['input_ids'][0]
+        token_type_ids = input_dict['token_type_ids'][0]
+        attention_mask = input_dict['attention_mask'][0]
+
+        return (input_ids, attention_mask, token_type_ids)
+         
+    def __getitem__(self, idx):
+        if self.mode == 'train':
+            test_did , ref_did, label = self.train_pairs[idx]
+            label = torch.tensor(label)
+
+        if self.mode == 'test':
+            test_did , ref_did = self.test_pairs[idx]
+
+
+        test_text = self.did2title[test_did] + self.did2text[test_did]
+        ref_text = self.did2title[ref_did] + self.did2text[ref_did]
+
+
+        input_ids, attention_mask, token_type_ids = self.tensorsize(test_text, ref_text)
+
+        
+        if self.mode == 'train':
+            return input_ids, attention_mask, token_type_ids, label
+        if self.mode == 'test':
+            return (input_ids, attention_mask, token_type_ids), (test_did, ref_did)
 
 
     def __len__(self):

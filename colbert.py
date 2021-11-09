@@ -60,6 +60,7 @@ class ColBERT(BertPreTrainedModel):
             D = [d[mask[idx]] for idx, d in enumerate(D)]
         return D
 
+
     def score(self, Q, D):
 
         if Q.size(0) != D.size(0):

@@ -19,12 +19,15 @@ lr = 1e-5
 batch_size = 1
 accumulation_steps = 16
 mode = 'train'
-epochs = 5
+epochs = 3
 warm_up_rate = 0.03
 json_path = './data/train_complete.json'
-train_negative_nums = 150
+train_hard_negative_nums = 2
+train_rand_negative_nums = 10
 multi_gpu = False
-model_save_path = './outputs_models/colbert_negall/'
+# model_save_path = f'./outputs_models/colbert_hard_neg{train_hard_negative_nums}_rand_neg{train_rand_negative_nums}/'
+model_save_path = f'./outputs_models/colbert_negall/'
+
 if not os.path.exists(model_save_path):
     os.makedirs(model_save_path)
 ### hyperparams ###
@@ -39,7 +42,7 @@ if device == 'cpu':
 json_data = load_data_json(json_path)
 
 tokenizer = AutoTokenizer.from_pretrained(pretrained_model)
-train_set = MyDataset_triples(mode, json_data, tokenizer, train_negative_nums)
+train_set = MyDataset_triples(mode, json_data, tokenizer, train_hard_negative_nums, train_rand_negative_nums)
 print(len(train_set))
 train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
 
