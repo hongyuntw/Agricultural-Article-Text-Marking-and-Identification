@@ -44,5 +44,8 @@ class DPR(BertPreTrainedModel):
         return D
 
     def score(self, Q, D):
+
+
         scores = F.cosine_similarity(Q.unsqueeze(1), D.unsqueeze(0), dim=2)
+
         return scores

@@ -17,17 +17,18 @@ import os
 import numpy as np
 ### hyperparams ###
 # pretrained_model = 'hfl/chinese-bert-wwm'  
-pretrained_model = 'hfl/chinese-macbert-base'  
+pretrained_model = 'hfl/chinese-macbert-large'  
 lr = 1e-5
-batch_size = 3
+batch_size = 12
 accumulation_steps = 1
 mode = 'train'
-epochs = 10
+epochs = 20
 warm_up_rate = 0.03
 json_path = './data/train_complete.json'
-train_negative_nums = 4
+train_hard_negative_nums = 2
+train_rand_negative_nums = 10
 multi_gpu = False
-model_save_path = './outputs_models/dpr/'
+model_save_path = './outputs_models/dpr_title_keyword/'
 if not os.path.exists(model_save_path):
     os.makedirs(model_save_path)
 ### hyperparams ###
@@ -42,7 +43,7 @@ if device == 'cpu':
 json_data = load_data_json(json_path)
 
 tokenizer = AutoTokenizer.from_pretrained(pretrained_model)
-train_set = MyDataset_triples(mode, json_data, tokenizer, train_negative_nums)
+train_set = MyDataset_triples(mode, json_data, tokenizer, train_hard_negative_nums, train_rand_negative_nums)
 train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
 
 
@@ -63,7 +64,7 @@ if multi_gpu:
 model.train()
 
 
-labels = range(0, 20, 2)
+labels = range(0, 64, 2)
 
 for epoch in range(epochs):
     running_loss = 0.0
@@ -105,6 +106,7 @@ for epoch in range(epochs):
         acc += correct_predictions_count.detach().cpu().item() / b
 
         print(f'\r Epoch : {epoch+1}, batch : {i+1}/{totals_batch}, loss : {running_loss / (i+1) :.5f}, acc : {acc/ (i+1) :.5f}' , end='' )
+
 
     torch.save(model.state_dict(), f"{model_save_path}/model_{str(epoch+1)}.pt")
     print(' saved ')

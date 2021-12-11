@@ -36,17 +36,19 @@ class ColBERT(BertPreTrainedModel):
         self.init_weights()
 
     def forward(self, D_test, D_ref):
-        test_input_ids, test_attention_mask = D_test
-        ref_input_ids, ref_attention_mask = D_ref
+        # test_input_ids, test_attention_mask = D_test
+        # ref_input_ids, ref_attention_mask = D_ref
+        test_input_ids, test_attention_mask, test_token_type_ids = D_test
+        ref_input_ids, ref_attention_mask, ref_token_type_ids = D_ref
 
         return self.score(
-            self.doc(test_input_ids, test_attention_mask), 
-            self.doc(ref_input_ids, ref_attention_mask)
+            self.doc(test_input_ids, test_attention_mask, test_token_type_ids), 
+            self.doc(ref_input_ids, ref_attention_mask, ref_token_type_ids)
         )
 
 
-    def doc(self, input_ids, attention_mask, keep_dims=True):
-        D = self.bert(input_ids, attention_mask=attention_mask)[0]
+    def doc(self, input_ids, attention_mask, token_type_ids, keep_dims=True):
+        D = self.bert(input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)[0]
         # Bsize * Length * Dim=128 
         D = self.linear(D)
 
@@ -67,6 +69,7 @@ class ColBERT(BertPreTrainedModel):
             Q = torch.repeat_interleave(Q, 2, dim=0)
 
         if self.similarity_metric == 'cosine':
+            # print('cosine')
             return (Q @ D.permute(0, 2, 1)).max(2).values.sum(1)
 
         assert self.similarity_metric == 'l2'

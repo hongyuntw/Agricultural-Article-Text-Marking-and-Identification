@@ -30,12 +30,17 @@ other_keywords = [
     '葡萄露菌病',
     '白葉枯病'
     '舞蛾',
+    '梅雨',
+    '颱風',
+    '降雨'
 ]
 
 
 def create_same_words_dict():
     import pandas as pd
     files = glob.glob("./data/Keywords/*.xlsx")
+    # files = glob.glob("./data/Keywords/02pest.list.xlsx")
+    # files += glob.glob("./data/Keywords/02crop.list.xlsx")
     same_words_dict = {}
 
     for file in files:
@@ -97,22 +102,76 @@ def create_positive_dict():
         test_id , ref_id = row
         if test_id == 'Test':
             continue
+        if str(test_id) == '887' or str(ref_id) == '887':
+            continue
         if test_id in positive_dict:
             positive_dict[test_id].append(ref_id)
         else:
             positive_dict[test_id] = [ref_id]
 
-        if ref_id in positive_dict:
-            positive_dict[ref_id].append(test_id)
-        else:
-            positive_dict[ref_id] = [test_id]
+        # if ref_id in positive_dict:
+        #     positive_dict[ref_id].append(test_id)
+        # else:
+        #     positive_dict[ref_id] = [test_id]
         
     f.close()
     with open('./data/train_positive_dict', 'wb') as handle:
         pickle.dump(positive_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
     return positive_dict
     
+def create_hard_negatives_data_byset(same_words_dict, positive_dict, json_path, bm25_topk=150):
+    json_data = load_data_json(json_path)
 
+    corpus_ids = [d['did'] for d in json_data]
+
+    def jaccard_score(set1, set2):
+        u = set1.union(set2) 
+        i = set1.intersection(set2)
+        if len(u) == 0:
+            return 0
+        return len(i) / len(u)
+
+    from collections import defaultdict
+    keyword_set_sim = defaultdict(dict)
+    for i in range(len(json_data)):
+        for k in range(len(json_data)):
+            
+            did_i = json_data[i]['did']
+            did_k = json_data[k]['did']
+            
+            set_i = set(json_data[i]['keyword_set'])
+            set_k = set(json_data[k]['keyword_set'])
+            
+            sim_socre = jaccard_score(set_i, set_k)
+            keyword_set_sim[did_i][did_k] = sim_socre
+
+
+    for i, d in enumerate(tqdm(json_data)):
+        did_i = json_data[i]['did']
+        if did_i not in positive_dict:
+            positive_dict[did_i] = []
+        
+        pos_dids = positive_dict[did_i]
+        
+        pos_dids_set = set(pos_dids)
+
+        ref_keyword_set_dict = keyword_set_sim[did_i]
+
+        ref_keyword_set_dict = {k: v for k, v in sorted(ref_keyword_set_dict.items(), key=lambda item: item[1], reverse=True)}
+        hard_negative_dids = []
+        for ref_did, set_score in ref_keyword_set_dict.items():
+            if ref_did in pos_dids_set or ref_did == did_i:
+                continue
+            if set_score >= 0.2:
+                hard_negative_dids.append(ref_did)
+
+        json_data[i]['pos_dids'] = list(set(pos_dids))
+        json_data[i]['hard_neg_dids'] = hard_negative_dids
+
+    json_data = sorted(json_data, key=lambda d: int(d['did'])) 
+
+    with open(json_path, 'w', encoding='utf8') as f:
+	    json.dump(json_data, f, ensure_ascii=False)
 
 
 # use bm25 to get top-5 hard-negative document for each did
@@ -185,6 +244,12 @@ def tokenize(same_words_dict, json_data, documents_sentence_list_path, titles_se
     for k, v in same_words_dict.items():
         word_to_weight[k] = 1
         word_to_weight[v] = 1
+        word_to_weight['桃園'] = 2
+        word_to_weight['楊梅'] = 2
+        word_to_weight['梅姬'] = 2
+        word_to_weight['梅山'] = 2
+        word_to_weight['入梅'] = 2
+        word_to_weight['梅花'] = 2
     dictionary = construct_dictionary(word_to_weight)
     ws = WS("./ckiptagger/data")
     pos = POS("./ckiptagger/data")
@@ -271,18 +336,43 @@ def load_data_json(json_path):
 
 
 
+
+def create_keyword_set(json_path, json_data, same_words_dict):
+    json_data = load_data_json(json_path)
+    for i, d in enumerate(json_data):
+        did = d['did']
+        # text_words = d['text']
+        # title_words = d['title']
+        text_words = d['text_sentence'].split()
+        title_words = d['title_sentence'].split()
+        all_words = text_words + title_words
+        keyword_set = set()
+        # print(all_words)
+        # input()
+        for k, v in same_words_dict.items():
+            for word in all_words:
+                if k == word:
+                    if v == '梅':
+                        print(did)
+                    keyword_set.add(v)
+        json_data[i]['keyword_set'] = list(keyword_set)
+
+    with open(json_path, 'w', encoding='utf8') as f:
+	    json.dump(json_data, f, ensure_ascii=False)
+
+    return json_data
+
 if __name__ == '__main__':
 
-    mode = 'train'
+    mode = 'public'
     folder_path = f'./data/data{mode.title()}Complete/'
-    json_path = f'./data/{mode}_complete_ref_test_equal.json'
+    json_path = f'./data/{mode}_complete.json'
 
     create_train_json(json_path, folder_path)
     json_data = load_data_json(json_path)
     print(len(json_data))
 
     same_words_dict = create_same_words_dict()
-    
 
     documents_sentence_list_path = f'./data/documents_sentence_list_{mode}'
     titles_sentence_list_path = f'./data/titles_sentence_list_{mode}'
@@ -292,13 +382,19 @@ if __name__ == '__main__':
 
     add_tokenize_word_to_json(documents_sentence_list_path, titles_sentence_list_path, json_path, same_words_dict)
 
+    json_data = create_keyword_set(json_path, json_data, same_words_dict)
 
     # # bm25 create negative sample
     # positive_dict = {}
-    positive_dict = create_positive_dict()
-    create_hard_negatives_data(same_words_dict, positive_dict, json_path, 200)
+    if mode == 'public':
+        positive_dict = {}
+    elif mode == 'train':
+        positive_dict = create_positive_dict()
 
-    
+    # bm25_topk = 20
+    # create_hard_negatives_data(same_words_dict, positive_dict, json_path, bm25_topk)
+    create_hard_negatives_data_byset(same_words_dict, positive_dict, json_path)
+
 
     # pos_count = 0
     # neg_count = 0
